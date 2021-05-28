@@ -243,6 +243,8 @@ class OodCore::Job::Adapters::Kubernetes::Helper
     if start.nil?
       # the pod is in some pending state limbo
       conditions = status.dig(:conditions)
+      return nil if conditions.nil?
+      return nil if conditions.size == 0
       # best guess to start time is just the first condition's
       # transition time
       str = conditions[0].dig(:lastTransitionTime)
@@ -255,11 +257,20 @@ class OodCore::Job::Adapters::Kubernetes::Helper
 
   def pod_status_from_json(json_data)
     phase = json_data.dig(:status, :phase)
+    conditions = json_data.dig(:status, :conditions)
+    unschedulable = false
+    unless conditions.nil?
+      unschedulable = conditions.any? { |c| c.dig(:reason) == "Unschedulable" }
+    end
     state = case phase
             when "Running"
               "running"
             when "Pending"
-              "queued"
+              if unschedulable
+                "queued_held"
+              else
+                "queued"
+              end
             when "Failed"
               "suspended"
             when "Succeeded"
